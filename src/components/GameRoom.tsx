@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { QUESTIONS } from '../questions';   // ✅ fixed import
+
+// Robust import that works whether questions.ts uses default export or named export
+import * as Q from '../questions';
+const QUESTIONS: string[] = (Q as any).QUESTIONS || (Q as any).default || (Q as any).questions;
+
 import { buildQuestionOrder } from '../lib/questionsOrder';
 import { fetchRoom, listPlayers, markGameStarted, resetRoomForReplay } from '../lib/roomAPI';
 
