@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import QUESTIONS from '../questions';
+import { QUESTIONS } from '../questions';   // ✅ fixed import
 import { buildQuestionOrder } from '../lib/questionsOrder';
 import { fetchRoom, listPlayers, markGameStarted, resetRoomForReplay } from '../lib/roomAPI';
 
