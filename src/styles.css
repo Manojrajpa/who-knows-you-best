@@ -1,72 +1,18 @@
-
-:root{
-  --bg1: #f0f7ff;
-  --bg2: #fff0f6;
-  --card-bg: rgba(255,255,255,0.85);
-  --text: #111827;
-  --muted: #6b7280;
-  --primary: #7c3aed;
-  --primary-contrast: #ffffff;
-  --accent: #06b6d4;
-  --danger: #ef4444;
-  --shadow: 0 20px 40px rgba(0,0,0,0.12);
-}
-*{ box-sizing:border-box }
-body{
-  margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-  color: var(--text);
-  background: linear-gradient(130deg, var(--bg1), #ffffff 40%, var(--bg2));
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-/* Soft photo overlay from your image */
-body::before{
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image: url('./assets/background2.jpg');
-  background-size: cover;
-  background-position: center;
-  opacity: .14;
-  z-index: -2;
-}
-.bg-blob{
-  position: fixed; z-index: -1; opacity: .25;
-}
-.bg-blob.blob1{ top:-80px; left:-80px; width: 420px; transform: rotate(12deg) }
-.bg-blob.blob2{ bottom:-120px; right:-100px; width: 520px; transform: rotate(-8deg) }
-.card{
-  background: var(--card-bg);
-  border: 1px solid rgba(0,0,0,0.06);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-}
-.btn{
-  border:1px solid rgba(0,0,0,0.1);
-  border-radius: 12px;
-  padding: 10px 14px;
-  background: #ffffff;
-  cursor: pointer;
-  font-weight: 600;
-  transition: transform .05s ease, box-shadow .2s ease, background .2s ease;
-}
-.btn:hover{ transform: translateY(-1px) }
-.btn:active{ transform: translateY(0px) scale(0.98) }
-.btn-primary{ background: var(--primary); color: var(--primary-contrast); border-color: transparent; }
-.btn-accent{ background: var(--accent); color:#00303a; border-color: transparent; }
-.btn-danger{ background: var(--danger); color:#fff; border-color: transparent; }
-.btn-ghost{ background: transparent; }
-.input,.select{
-  width:100%; padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff;
-}
-.kicker{ color: var(--muted); font-size: 12px }
-.heading{ font-size: 28px; margin: .4rem 0 }
-.list{ padding-left:18px }
-.winner-banner{
-  padding: 16px; border-radius: 14px;
-  background: linear-gradient(90deg, #fef3c7, #dcfce7);
-  border: 1px solid rgba(0,0,0,0.06);
-}
-.leader-row{ display:flex; justify-content:space-between; padding:10px 12px; border-bottom:1px dashed rgba(0,0,0,0.06) }
-.leader-row:last-child{ border-bottom:none }
+/* Minimal layout to keep things neat (non-destructive) */
+.container { max-width: 960px; margin: 0 auto; padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.center { align-items: center; text-align: center; }
+.row { display: flex; gap: 8px; align-items: center; }
+.card { background: rgba(255,255,255,0.85); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+.badge { background: #111; color: #fff; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.title { margin: 0 0 8px 0; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; background: rgba(255,255,255,0.85); padding: 8px 12px; border-radius: 10px; }
+button { padding: 8px 12px; border: 0; border-radius: 8px; background: #111; color: #fff; cursor: pointer; }
+button.secondary { background: #e6e6e6; color: #111; }
+button.danger { background: #d92d20; }
+input { padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; }
+.muted { color: #666; font-size: 14px; }
+.small { font-size: 13px; color: #444; }
+.error { color: #d92d20; }
+.success { color: #0f8a5f; }

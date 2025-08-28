@@ -1,4 +1,3 @@
-// deterministic PRNG from a numeric seed
 export function mulberry32(a: number) {
   return function () {
     let t = (a += 0x6D2B79F5);
@@ -8,7 +7,6 @@ export function mulberry32(a: number) {
   };
 }
 
-// Fisher–Yates shuffle using the seeded PRNG above
 export function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
   const a = arr.slice();
   const rnd = mulberry32(seed);

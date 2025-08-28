@@ -1,4 +1,3 @@
-// Uses your existing Supabase client. Keep src/lib/supabase.ts as-is.
 import { supabase } from './supabase';
 
 export type RoomRow = {
@@ -52,10 +51,6 @@ export async function listPlayers(code: string) {
 }
 
 export async function joinRoom(code: string, name: string) {
-  const room = await fetchRoom(code);
-  if (room.started) {
-    throw new Error('Game is already started, contact the host');
-  }
   const { error } = await supabase
     .from('players')
     .insert({ code, name, joined_at: Date.now() });

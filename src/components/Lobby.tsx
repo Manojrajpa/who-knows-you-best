@@ -37,7 +37,9 @@ export default function Lobby({ onEnterRoom }: Props) {
   }
 
   return (
-    <div className="stack">
+    <div className="card stack center">
+      <h1 className="title">Who Knows You Better?</h1>
+      <p className="muted">Host a room or join with a code.</p>
       <div className="row">
         <input
           placeholder="Your name"
@@ -50,7 +52,7 @@ export default function Lobby({ onEnterRoom }: Props) {
         <input
           placeholder="Enter code"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
         />
         <button className="secondary" onClick={onJoin}>
           Join

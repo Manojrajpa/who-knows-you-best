@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useState } from 'react';
 import Lobby from './components/Lobby';
 import GameRoom from './components/GameRoom';
@@ -26,14 +25,12 @@ export default function App() {
         <Lobby onEnterRoom={handleEnterRoom} />
       ) : (
         <>
-          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+          <div className="toolbar">
             <div>
               <strong>Room:</strong> <span className="badge">{roomCode}</span>
+              <span className="muted"> &nbsp;|&nbsp; {name}{isHost ? ' (Host)' : ''}</span>
             </div>
-            <div className="row">
-              <span style={{ marginRight: 12 }}>{name}{isHost ? ' (Host)' : ''}</span>
-              <button className="secondary" onClick={handleLeave}>Leave</button>
-            </div>
+            <button className="secondary" onClick={handleLeave}>Leave</button>
           </div>
           <GameRoom roomCode={roomCode} playerName={name} isHost={isHost} />
         </>

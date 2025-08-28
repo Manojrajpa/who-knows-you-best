@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-
-// Robust import that works whether questions.ts uses default export or named export
 import * as Q from '../questions';
-const QUESTIONS: string[] = (Q as any).QUESTIONS || (Q as any).default || (Q as any).questions;
-
 import { buildQuestionOrder } from '../lib/questionsOrder';
 import { fetchRoom, listPlayers, markGameStarted, resetRoomForReplay } from '../lib/roomAPI';
+
+// Robust import: works for default or named or 'questions'
+const QUESTIONS_ANY: any =
+  (Q as any).QUESTIONS ?? (Q as any).default ?? (Q as any).questions ?? [];
+const QUESTIONS: string[] = Array.isArray(QUESTIONS_ANY) ? QUESTIONS_ANY : [];
 
 type Props = {
   roomCode: string;
@@ -14,20 +15,18 @@ type Props = {
 };
 
 export default function GameRoom({ roomCode, playerName, isHost }: Props) {
-  const [room, setRoom] = useState<any>(null);
-  const [players, setPlayers] = useState<any[]>([]);
   const [started, setStarted] = useState(false);
+  const [players, setPlayers] = useState<any[]>([]);
   const [order, setOrder] = useState<number[]>([]);
   const [idx, setIdx] = useState(0);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  // Initial load
+  // Load room + build order
   useEffect(() => {
     (async () => {
       try {
         const r = await fetchRoom(roomCode);
-        setRoom(r);
         setStarted(!!r.started);
         setOrder(buildQuestionOrder(r.seed, QUESTIONS.length, 10));
       } catch (e: any) {
@@ -36,7 +35,7 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
     })();
   }, [roomCode]);
 
-  // Polling fallback so other devices stay in sync
+  // Poll players/started
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -44,7 +43,6 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
         const r = await fetchRoom(roomCode);
         const p = await listPlayers(roomCode);
         if (!alive) return;
-        setRoom(r);
         setStarted(!!r.started);
         setPlayers(p);
       } catch {}
@@ -54,12 +52,10 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
     return () => { alive = false; clearInterval(id); };
   }, [roomCode]);
 
-  // Manual Refresh
   async function handleRefresh() {
     try {
       const r = await fetchRoom(roomCode);
       const p = await listPlayers(roomCode);
-      setRoom(r);
       setStarted(!!r.started);
       setPlayers(p);
       setInfo('Synced');
@@ -69,6 +65,10 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
 
   async function handleStart() {
     try {
+      if (!QUESTIONS.length) {
+        setError('No questions found. Please check src/questions.ts export.');
+        return;
+      }
       await markGameStarted(roomCode, true);
       setStarted(true);
       setIdx(0);
@@ -83,7 +83,6 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
       const newSeed = Math.floor(Math.random() * 1e9);
       await resetRoomForReplay(roomCode, newSeed);
       const r = await fetchRoom(roomCode);
-      setRoom(r);
       setStarted(false);
       setOrder(buildQuestionOrder(r.seed, QUESTIONS.length, 10));
       setIdx(0);
@@ -93,7 +92,20 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
     }
   }
 
-  const question = order.length ? QUESTIONS[order[idx]] : '';
+  async function handleEndGame() {
+    try {
+      await markGameStarted(roomCode, false);
+      setStarted(false);
+      setIdx(0);
+      setInfo('Game ended');
+    } catch (e: any) {
+      setError(e.message || 'Failed to end game');
+    }
+  }
+
+  const question = order.length && idx >= 0 && idx < order.length
+    ? QUESTIONS[order[idx]]
+    : '';
 
   return (
     <div className="stack">
@@ -112,6 +124,7 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
           {players.map((p: any) => (
             <span className="badge" key={p.id || p.name}>{p.name}</span>
           ))}
+          {!players.length && <span className="muted">Waiting for players…</span>}
         </div>
       </div>
 
@@ -125,22 +138,25 @@ export default function GameRoom({ roomCode, playerName, isHost }: Props) {
       {started && (
         <div className="card">
           <div style={{ minHeight: 60 }}>
-            <h3 style={{ margin: 0 }}>{question}</h3>
-          </div>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <button
-              className="secondary"
-              onClick={() => setIdx(i => Math.max(0, i - 1))}
-              disabled={idx <= 0}
-            >Prev</button>
-            <span className="small">Q {order.length ? idx + 1 : 0} / {order.length}</span>
-            <button
-              onClick={() => setIdx(i => Math.min(order.length - 1, i + 1))}
-              disabled={idx >= order.length - 1}
-            >Next</button>
+            <h2 style={{ margin: 0 }}>{question || 'Loading question…'}</h2>
           </div>
           {isHost && (
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <button
+                className="secondary"
+                onClick={() => setIdx(i => Math.max(0, i - 1))}
+                disabled={idx <= 0}
+              >Prev</button>
+              <span className="small">Q {order.length ? idx + 1 : 0} / {order.length || 0}</span>
+              <button
+                onClick={() => setIdx(i => Math.min(order.length - 1, i + 1))}
+                disabled={!order.length || idx >= order.length - 1}
+              >Next</button>
+            </div>
+          )}
+          {isHost && (
             <div className="row">
+              <button className="danger" onClick={handleEndGame}>End Game</button>
               <button className="secondary" onClick={handlePlayAgain}>Play Again</button>
             </div>
           )}
