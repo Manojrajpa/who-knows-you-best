@@ -1,128 +1,112 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import * as Q from '../questions';
 
 type Props = {
-  roomCode: string;      // e.g. “ABCD12”
-  playerName: string;    // local display name
-  isHost: boolean;       // true if this client is the host/QM
+  roomCode: string;         // e.g. "AB12CD"
+  playerName: string;       // local display name
+  isHost: boolean;          // host flag
   onLeave?: () => void;
 };
 
-type GameRow = {
-  id: string;
+type RoomRow = {
   code: string;
-  status: 'lobby' | 'playing' | 'ended';
-  qm_id: string | null;
-  host_id: string | null;
-  num_questions: number | null;
-  started_at: string | null;
-  created_at: string;
+  created_at: number;
+  started: boolean;
+  seed: number;
 };
 
 type PlayerRow = {
-  id: string;
-  game_id: string;
+  id?: string;
+  code: string;
   name: string;
-  is_host: boolean;
-  is_qm: boolean;
-  score: number | null;
-  joined_at: string;
+  joined_at?: number;
 };
 
-type RoundRow = {
-  id: string;
-  game_id: string;
-  round_number: number | null;
-  question: string | null;
-  status: 'pending' | 'approved' | 'skipped' | 'ended' | null;
-  created_at: string;
-};
+// questions (support default / QUESTIONS / questions)
+const Q_ANY: any = (Q as any).QUESTIONS ?? (Q as any).default ?? (Q as any).questions ?? [];
+const QUESTIONS: string[] = Array.isArray(Q_ANY) ? Q_ANY : [];
 
-// questions array (supports default export or named QUESTIONS/questions)
-const QUESTIONS_ANY: any =
-  (Q as any).QUESTIONS ?? (Q as any).default ?? (Q as any).questions ?? [];
-const QUESTION_BANK: string[] = Array.isArray(QUESTIONS_ANY) ? QUESTIONS_ANY : [];
+/** Fisher–Yates with seed */
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const out = arr.slice();
+  let s = seed >>> 0;
+  const rnd = () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return (s >>> 0) / 0xffffffff;
+  };
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
-/** -------- Supabase helpers -------- */
-async function fetchGameByCode(code: string): Promise<GameRow | null> {
-  const { data, error } = await supabase.from('games').select('*').eq('code', code).single();
+async function fetchRoom(code: string): Promise<RoomRow | null> {
+  const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
   if (error && (error as any).code !== 'PGRST116') throw error;
   return data as any;
 }
 
-async function fetchPlayers(gameId: string): Promise<PlayerRow[]> {
+async function listPlayers(code: string): Promise<PlayerRow[]> {
   const { data, error } = await supabase
     .from('players')
-    .select('*')
-    .eq('game_id', gameId)
+    .select('id, code, name, joined_at')
+    .eq('code', code)
     .order('joined_at', { ascending: true });
   if (error) throw error;
   return (data as any) || [];
 }
 
-async function fetchActiveRound(gameId: string): Promise<RoundRow | null> {
-  // Most recent round that is not 'ended'
-  const { data, error } = await supabase
-    .from('rounds')
-    .select('*')
-    .eq('game_id', gameId)
-    .not('status', 'eq', 'ended')
-    .order('created_at', { ascending: false })
-    .limit(1);
+async function setStarted(code: string, started: boolean) {
+  const { error } = await supabase.from('rooms').update({ started }).eq('code', code);
   if (error) throw error;
-  return data && data.length ? (data[0] as any) : null;
 }
 
-async function createNextRound(gameId: string, used: Set<string>): Promise<RoundRow> {
-  const pool = QUESTION_BANK.filter((q) => !used.has(q));
-  const pickFrom = pool.length ? pool : QUESTION_BANK;
-  const q = pickFrom[Math.floor(Math.random() * pickFrom.length)];
-
-  const { data, error } = await supabase
-    .from('rounds')
-    .insert({ game_id: gameId, question: q, status: 'pending' })
-    .select()
-    .single();
+async function resetForReplay(code: string) {
+  // new seed forces a fresh question order; back to lobby
+  const newSeed = Math.floor(Math.random() * 1e9);
+  const { error } = await supabase.from('rooms').update({ started: false, seed: newSeed }).eq('code', code);
   if (error) throw error;
-  return data as any;
 }
 
-/** -------- Component -------- */
 export default function GameRoom({ roomCode, playerName, isHost, onLeave }: Props) {
-  const [game, setGame] = useState<GameRow | null>(null);
+  const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
-  const [round, setRound] = useState<RoundRow | null>(null);
-  const [error, setError] = useState('');
+  const [err, setErr] = useState('');
   const [info, setInfo] = useState('');
+  const [qIndex, setQIndex] = useState(0);       // local question pointer (host drives)
+  const [approved, setApproved] = useState(false);
+  const [skipped, setSkipped] = useState(false);
 
-  const gameId = game?.id;
+  // Build a deterministic order from seed (no repeats within the session)
+  const order = useMemo(() => {
+    if (!QUESTIONS.length) return [] as number[];
+    const idx = QUESTIONS.map((_, i) => i);
+    const seed = room?.seed ?? 1;
+    return seededShuffle(idx, seed);
+  }, [room?.seed]);
 
-  /** Initial load + polling (keeps both devices in sync) */
+  const currentQuestion =
+    order.length && qIndex >= 0 && qIndex < order.length ? QUESTIONS[order[qIndex]] : '';
+
+  /** Initial + polling */
   useEffect(() => {
     let alive = true;
 
-    const loadAll = async () => {
+    const tick = async () => {
       try {
-        const g = await fetchGameByCode(roomCode);
+        const [r, p] = await Promise.all([fetchRoom(roomCode), listPlayers(roomCode)]);
         if (!alive) return;
-        setGame(g);
-        if (g) {
-          const [p, r] = await Promise.all([fetchPlayers(g.id), fetchActiveRound(g.id)]);
-          if (!alive) return;
-          setPlayers(p);
-          setRound(r);
-        } else {
-          setPlayers([]);
-          setRound(null);
-        }
+        setRoom(r);
+        setPlayers(p);
       } catch (e: any) {
-        if (alive) setError(e.message || 'Failed to load game');
+        if (alive) setErr(e.message || 'Failed to sync');
       }
     };
 
-    loadAll();
-    const t = setInterval(loadAll, 2000);
+    tick();
+    const t = setInterval(tick, 2000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -132,109 +116,70 @@ export default function GameRoom({ roomCode, playerName, isHost, onLeave }: Prop
   /** Manual refresh */
   async function handleRefresh() {
     try {
-      if (!gameId) return;
-      const [g, p, r] = await Promise.all([
-        fetchGameByCode(roomCode),
-        fetchPlayers(gameId),
-        fetchActiveRound(gameId),
-      ]);
-      setGame(g);
+      const [r, p] = await Promise.all([fetchRoom(roomCode), listPlayers(roomCode)]);
+      setRoom(r);
       setPlayers(p);
-      setRound(r);
       setInfo('Synced'); setTimeout(() => setInfo(''), 900);
-    } catch {
-      // ignore
-    }
+    } catch {/* ignore */}
   }
 
-  /** Start Game (host only) */
+  /** Start Game (host) */
   async function handleStart() {
+    if (!room) return;
+    if (!QUESTIONS.length) {
+      setErr('No questions found in src/questions.ts');
+      return;
+    }
     try {
-      if (!game) return;
-      if (!QUESTION_BANK.length) {
-        setError('No questions found in src/questions.ts');
-        return;
-      }
-      // mark game playing
-      const { error: uerr } = await supabase.from('games').update({ status: 'playing' }).eq('id', game.id);
-      if (uerr) throw uerr;
-
-      // avoid repeats across the whole game
-      const { data: prev } = await supabase
-        .from('rounds')
-        .select('question')
-        .eq('game_id', game.id);
-      const used = new Set((prev || []).map((r: any) => r.question as string));
-
-      const r = await createNextRound(game.id, used);
-      setGame({ ...game, status: 'playing' });
-      setRound(r);
+      await setStarted(room.code, true);
+      setApproved(false); setSkipped(false);
+      setQIndex(0);
+      setRoom({ ...room, started: true });
       setInfo('Game started');
     } catch (e: any) {
-      setError(e.message || 'Failed to start');
+      setErr(e.message || 'Failed to start');
     }
   }
 
-  /** Approve / Skip (host only; disabled if no active round) */
-  async function handleApprove() {
-    if (!game || !round) return;
-    try {
-      const { error: uerr } = await supabase.from('rounds').update({ status: 'approved' }).eq('id', round.id);
-      if (uerr) throw uerr;
-      setRound({ ...round, status: 'approved' });
-    } catch (e: any) {
-      setError(e.message || 'Approve failed');
-    }
-  }
-  async function handleSkip() {
-    if (!game || !round) return;
-    try {
-      const { error: uerr } = await supabase.from('rounds').update({ status: 'skipped' }).eq('id', round.id);
-      if (uerr) throw uerr;
-      setRound({ ...round, status: 'skipped' });
-    } catch (e: any) {
-      setError(e.message || 'Skip failed');
-    }
-  }
-
-  /** Next Question (host only) */
-  async function handleNextQuestion() {
-    if (!game) return;
-    try {
-      const { data: prev } = await supabase
-        .from('rounds')
-        .select('question')
-        .eq('game_id', game.id);
-      const used = new Set((prev || []).map((r: any) => r.question as string));
-      const r = await createNextRound(game.id, used);
-      setRound(r);
-    } catch (e: any) {
-      setError(e.message || 'Next question failed');
-    }
-  }
-
-  /** Play Again → go back to lobby and clear local round so Start Game shows */
+  /** Play Again -> back to lobby + new seed, clear local round state */
   async function handlePlayAgain() {
-    if (!game) return;
+    if (!room) return;
     try {
-      const { error: uerr } = await supabase.from('games').update({ status: 'lobby' }).eq('id', game.id);
-      if (uerr) throw uerr;
-      setGame({ ...game, status: 'lobby' });
-      setRound(null); // critical: removes old question from the screen
-      setInfo('Ready to start a new game');
+      await resetForReplay(room.code);
+      setApproved(false); setSkipped(false);
+      setQIndex(0);
+      setRoom({ ...room, started: false, seed: (room.seed || 0) + 1 });
+      setInfo('Ready for a new game. Press Start Game.');
     } catch (e: any) {
-      setError(e.message || 'Play Again failed');
+      setErr(e.message || 'Failed to reset');
     }
   }
 
-  /** Derived flags */
-  const isLobby = game?.status === 'lobby';
-  const hasRound = !!round;
-  const question = round?.question || '';
+  /** Approve / Skip (host) */
+  function handleApprove() {
+    if (!room?.started || !currentQuestion) return;
+    setApproved(true); setSkipped(false);
+  }
+  function handleSkip() {
+    if (!room?.started || !currentQuestion) return;
+    setSkipped(true); setApproved(false);
+  }
+
+  /** Next Question (host) */
+  function handleNext() {
+    if (!room?.started) return;
+    if (!order.length) return;
+    const next = Math.min(order.length - 1, qIndex + 1);
+    setQIndex(next);
+    setApproved(false); setSkipped(false);
+  }
+
+  const isLobby = !room?.started;
+  const hostControlsDisabled = !room?.started || !currentQuestion;
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 12px' }}>
-      {/* Header row (Refresh + Leave on the right) */}
+      {/* Header row */}
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
           Room: <span className="badge">{roomCode}</span> &nbsp;|&nbsp; {playerName}{isHost ? ' (Host)' : ''}
@@ -250,7 +195,7 @@ export default function GameRoom({ roomCode, playerName, isHost, onLeave }: Prop
         <strong>Players</strong>
         <div className="list" style={{ marginTop: 8 }}>
           {players.map((p) => (
-            <span className="badge" key={p.id}>{p.name}</span>
+            <span className="badge" key={p.id ?? p.name}>{p.name}</span>
           ))}
           {!players.length && <span className="muted">Waiting for players…</span>}
         </div>
@@ -264,11 +209,11 @@ export default function GameRoom({ roomCode, playerName, isHost, onLeave }: Prop
         </div>
       )}
 
-      {/* Question block when playing */}
+      {/* Question block */}
       {!isLobby && (
         <div className="card" style={{ marginTop: 12 }}>
           <h2 style={{ margin: 0, minHeight: 60 }}>
-            {question || 'Waiting for the next question…'}
+            {currentQuestion || 'Waiting for the next question…'}
           </h2>
 
           {isHost && (
@@ -276,24 +221,34 @@ export default function GameRoom({ roomCode, playerName, isHost, onLeave }: Prop
               <button
                 className="secondary"
                 onClick={handleApprove}
-                disabled={!hasRound}
-              >Approve</button>
+                disabled={hostControlsDisabled}
+              >
+                Approve
+              </button>
               <button
                 className="secondary"
                 onClick={handleSkip}
-                disabled={!hasRound}
-              >Skip</button>
+                disabled={hostControlsDisabled}
+              >
+                Skip
+              </button>
               <button
-                onClick={handleNextQuestion}
-                disabled={!QUESTION_BANK.length}
-              >Next Question</button>
+                onClick={handleNext}
+                disabled={!order.length || qIndex >= order.length - 1}
+              >
+                Next Question
+              </button>
+              <span className="small" style={{ marginLeft: 'auto' }}>
+                Q {order.length ? qIndex + 1 : 0} / {order.length || 0}
+                {approved ? ' — Approved' : skipped ? ' — Skipped' : ''}
+              </span>
             </div>
           )}
         </div>
       )}
 
       {info && <p className="success" style={{ textAlign: 'center' }}>{info}</p>}
-      {error && <p className="error" style={{ textAlign: 'center' }}>{error}</p>}
+      {err && <p className="error" style={{ textAlign: 'center' }}>{err}</p>}
     </div>
   );
 }
