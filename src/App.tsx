@@ -4,36 +4,27 @@ import GameRoom from './components/GameRoom';
 
 export default function App() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [name, setName] = useState<string>('');
+  const [playerName, setPlayerName] = useState<string>('');
   const [isHost, setIsHost] = useState<boolean>(false);
 
-  function handleEnterRoom(code: string, playerName: string, host: boolean) {
+  function onEnterRoom(code: string, name: string, host: boolean) {
     setRoomCode(code);
-    setName(playerName);
+    setPlayerName(name);
     setIsHost(host);
   }
 
-  function handleLeave() {
+  function onLeave() {
     setRoomCode(null);
-    setName('');
+    setPlayerName('');
     setIsHost(false);
   }
 
   return (
-    <div className="container">
+    <div>
       {!roomCode ? (
-        <Lobby onEnterRoom={handleEnterRoom} />
+        <Lobby onEnterRoom={onEnterRoom} />
       ) : (
-        <>
-          <div className="toolbar">
-            <div>
-              <strong>Room:</strong> <span className="badge">{roomCode}</span>
-              <span className="muted"> &nbsp;|&nbsp; {name}{isHost ? ' (Host)' : ''}</span>
-            </div>
-            <button className="secondary" onClick={handleLeave}>Leave</button>
-          </div>
-          <GameRoom roomCode={roomCode} playerName={name} isHost={isHost} />
-        </>
+        <GameRoom roomCode={roomCode} playerName={playerName} isHost={isHost} onLeave={onLeave} />
       )}
     </div>
   );

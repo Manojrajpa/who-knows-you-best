@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from '../lib/supabase';
 
 export type RoomRow = {
   code: string;
@@ -51,6 +51,7 @@ export async function listPlayers(code: string) {
 }
 
 export async function joinRoom(code: string, name: string) {
+  // If your 'games' table controls lobby/start, validate here if needed.
   const { error } = await supabase
     .from('players')
     .insert({ code, name, joined_at: Date.now() });
