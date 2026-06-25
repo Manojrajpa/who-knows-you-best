@@ -61,6 +61,7 @@ async function fetchActiveRound(gameId: string): Promise<Round | null> {
     .from('rounds')
     .select('*')
     .eq('game_id', gameId)
+    .neq('status', 'scoring')
     .order('round_number', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -307,22 +308,16 @@ export default function GameRoom({ gameId, playerId }: Props) {
     await supabase.from('games').update({ status: 'complete' }).eq('id', gameId)
   }
 
-  // FULL reset for "Play Again":
-  // - delete rounds & answers
-  // - reset scores
-  // - set game back to 'lobby'
-  // - clear local state (so UI shows "Start Round")
   async function playAgain() {
     const { data: rds } = await supabase.from('rounds').select('id').eq('game_id', gameId)
     if (rds && rds.length) {
       const ids = rds.map(r => r.id)
       await supabase.from('answers').delete().in('round_id', ids)
-      await supabase.from('rounds').delete().eq('game_id', gameId)
+      await supabase.from('rounds').update({ status: 'scoring' }).eq('game_id', gameId)
     }
     await supabase.from('players').update({ score: 0 }).eq('game_id', gameId)
     await supabase.from('games').update({ status: 'lobby' }).eq('id', gameId)
 
-    // local reset so the old question disappears immediately
     setRound(null)
     setAnswers([])
     setGame(g => (g ? { ...g, status: 'lobby' } as Game : g))
